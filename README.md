@@ -1,4 +1,4 @@
-# LiteLLM Proxy Docker Compose
+# LiteLLM Proxy
 
 A Docker Compose setup for running [LiteLLM](https://github.com/BerriAI/litellm) proxy with PostgreSQL database, configured for GLM models via ZAI API and Claude models via OAuth.
 
@@ -17,29 +17,23 @@ A Docker Compose setup for running [LiteLLM](https://github.com/BerriAI/litellm)
 
 ## Quick Start
 
-1. Clone the repository:
-   ```bash
-   git clone git@github.com:grushikhin/litellm-docker-compose.git
-   cd litellm-docker-compose
-   ```
-
-2. Create your environment file:
+1. Create your environment file:
    ```bash
    cp .env.example .env
    ```
 
-3. Edit `.env` and add your API keys:
+2. Edit `.env` and add your API keys:
    ```env
    ZAI_API_KEY=your_zai_api_key_here
    LITELLM_MASTER_KEY=your_secure_master_key_here
    ```
 
-4. Start the services:
+3. Start the services:
    ```bash
    docker compose up -d
    ```
 
-5. Verify the proxy is running:
+4. Verify the proxy is running:
    ```bash
    curl http://localhost:4000/health
    ```
