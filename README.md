@@ -65,7 +65,7 @@ A Docker Compose setup for running [LiteLLM](https://github.com/BerriAI/litellm)
 | Service | Host Port | Container Port |
 |---------|-----------|----------------|
 | LiteLLM Proxy | 4000 | 4000 |
-| PostgreSQL | 5433 | 5432 |
+| PostgreSQL | internal only | 5432 |
 
 ## Admin UI
 
@@ -98,8 +98,11 @@ Add the following to your Claude Code settings (`~/.claude/settings.json`):
 
 ```json
 {
-  "apiKeyHelper": "echo sk-your-virtual-key",
-  "apiBaseUrl": "http://localhost:4000"
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:4000",
+    "ANTHROPIC_MODEL": "glm",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-litellm-api-key: Bearer YOUR_VIRTUAL_KEY"
+  }
 }
 ```
 
