@@ -20,6 +20,7 @@ model_list:
 litellm_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
   drop_params: true
+  turn_off_message_logging: true
   callbacks:
     - strip_oauth_callback.strip_oauth_for_zai
   model_group_settings:

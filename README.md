@@ -1,0 +1,115 @@
+# LiteLLM Proxy Docker Compose
+
+A Docker Compose setup for running [LiteLLM](https://github.com/BerriAI/litellm) proxy with PostgreSQL database, configured for GLM models via ZAI API and Claude models via OAuth.
+
+## Features
+
+- **GLM Models**: Access GLM-5 and GLM-5-AIR via ZAI API
+- **Claude Models**: Wildcard support for all Anthropic models via Claude Code OAuth
+- **PostgreSQL**: Persistent database for API keys, usage tracking, and logs
+- **OAuth Header Stripping**: Custom callback automatically removes OAuth headers for ZAI models
+
+## Prerequisites
+
+- Docker and Docker Compose
+- ZAI API key (for GLM models)
+- Claude Code OAuth setup (for Anthropic models)
+
+## Quick Start
+
+1. Clone the repository:
+   ```bash
+   git clone git@github.com:grushikhin/litellm-docker-compose.git
+   cd litellm-docker-compose
+   ```
+
+2. Create your environment file:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Edit `.env` and add your API keys:
+   ```env
+   ZAI_API_KEY=your_zai_api_key_here
+   LITELLM_MASTER_KEY=your_secure_master_key_here
+   ```
+
+4. Start the services:
+   ```bash
+   docker compose up -d
+   ```
+
+5. Verify the proxy is running:
+   ```bash
+   curl http://localhost:4000/health
+   ```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ZAI_API_KEY` | API key for ZAI/GLM models |
+| `LITELLM_MASTER_KEY` | Master key for proxy administration |
+| `DATABASE_URL` | PostgreSQL connection string (auto-configured in Docker) |
+
+### Available Models
+
+| Model Name | Backend | Description |
+|------------|---------|-------------|
+| `glm` | ZAI API | GLM-5 model |
+| `glm-fast` | ZAI API | GLM-5-AIR (faster variant) |
+| `anthropic/*` | Claude OAuth | All Anthropic models via wildcard |
+
+### Ports
+
+| Service | Host Port | Container Port |
+|---------|-----------|----------------|
+| LiteLLM Proxy | 4000 | 4000 |
+| PostgreSQL | 5433 | 5432 |
+
+## Usage
+
+### Making API Requests
+
+```bash
+# Using GLM model
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_LITELLM_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "glm",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+
+# Using Claude model (requires OAuth headers)
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_LITELLM_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-6",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+## OAuth Header Stripping
+
+The `strip_oauth_callback.py` module automatically removes OAuth `Authorization` headers when routing requests to ZAI models. This prevents authentication conflicts when using Claude Code OAuth alongside the ZAI API.
+
+## Management
+
+```bash
+# View logs
+docker compose logs -f litellm
+
+# Stop services
+docker compose down
+
+# Stop and remove volumes
+docker compose down -v
+```
+
+## License
+
+MIT
