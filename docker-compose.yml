@@ -13,7 +13,7 @@ services:
         condition: service_healthy
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - ./strip_oauth_callback.py:/app/strip_oauth_callback.py:ro
+      - ./request_transformer.py:/app/request_transformer.py:ro
     restart: unless-stopped
 
   postgres:

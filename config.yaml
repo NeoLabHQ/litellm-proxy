@@ -14,6 +14,14 @@ model_list:
       api_base: https://api.z.ai/api/anthropic
       merge_reasoning_content_in_choices: true
 
+  # OpenRouter models
+  - model_name: openrouter
+    litellm_params:
+      model: openai/qwen/qwen3.6-plus:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      merge_reasoning_content_in_choices: true
+
   # Claude models via Claude Code OAuth (wildcard - all other Anthropic models)
   - model_name: anthropic/*
     litellm_params:
@@ -24,8 +32,9 @@ litellm_settings:
   drop_params: true
   modify_params: true
   turn_off_message_logging: true
+  disable_spend_logs: true
   callbacks:
-    - strip_oauth_callback.strip_oauth_for_zai
+    - request_transformer.request_transformer
   model_group_settings:
     forward_client_headers_to_llm_api:
       - anthropic/*
@@ -38,4 +47,3 @@ router_settings:
     - "anthropic/claude-haiku-*": ["glm-fast"]
 
 general_settings:
-  database_url: os.environ/DATABASE_URL
