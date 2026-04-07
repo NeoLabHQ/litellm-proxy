@@ -22,6 +22,15 @@ model_list:
       api_base: https://openrouter.ai/api/v1
       merge_reasoning_content_in_choices: true
 
+  # Kimi K2.5 models via Anthropic-compatible API
+  - model_name: kimi
+    litellm_params:
+      model: anthropic/kimi-for-coding
+      api_key: os.environ/KIMI_API_KEY
+      api_base: https://api.kimi.com/coding
+      extra_headers:
+        x-api-key: os.environ/KIMI_API_KEY
+
   # Claude models via Claude Code OAuth (wildcard - all other Anthropic models)
   - model_name: anthropic/*
     litellm_params:

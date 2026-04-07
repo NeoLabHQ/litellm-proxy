@@ -4,10 +4,10 @@ LiteLLM Request/Response Transformer Callback
 This callback handles compatibility issues when using multiple LLM providers
 through a single LiteLLM proxy. It performs three key transformations:
 
-1. OAuth Header Stripping for GLM Models (ZAI API)
-   - ZAI's GLM models don't accept OAuth Authorization headers
+1. OAuth Header Stripping for Non-Claude Models (GLM, Kimi)
+   - Some providers don't accept OAuth Authorization headers
    - Claude Code sends OAuth headers for all requests
-   - We strip these headers before forwarding to ZAI endpoints
+   - We strip these headers before forwarding to non-Claude endpoints
 
 2. Thinking Block Removal from Anthropic Requests
    - Some providers (e.g., OpenRouter) return "thinking" blocks in responses
@@ -51,27 +51,25 @@ class RequestTransformer(CustomLogger):
             Modified request data dict
         """
         model = data.get("model", "")
-        
-        # Strip OAuth headers for GLM models (ZAI doesn't accept them)
-        self._strip_oauth_for_zai(model, data)
-        
+
+        # Strip OAuth headers for non-Claude models (GLM, Kimi don't accept them)
+        self._strip_oauth_for_non_claude(model, data)
+
         # Strip thinking blocks for Anthropic models (API validation requirement)
         self._strip_thinking_blocks_for_anthropic(model, data)
-        
+
         return data
 
-    async def async_post_call_success_hook(self, user_api_key_dict, cache, data, response, call_type):
+    async def async_post_call_success_hook(self, data, user_api_key_dict, response):
         """
         Called after a successful LLM API response. Transforms the response
         to ensure compatibility with Claude Code.
-        
+
         Args:
-            user_api_key_dict: User API key information
-            cache: LiteLLM cache object
             data: Original request data dict
+            user_api_key_dict: User API key information
             response: LLM API response object
-            call_type: Type of API call
-            
+
         Returns:
             Modified response object
         """
@@ -80,26 +78,30 @@ class RequestTransformer(CustomLogger):
         # Strip thinking blocks from OpenRouter responses to prevent caching issues
         return self._strip_thinking_blocks_from_openrouter_response(model, response)
 
-    def _strip_oauth_for_zai(self, model, data):
+    def _strip_oauth_for_non_claude(self, model, data):
         """
-        Remove OAuth Authorization headers for GLM/ZAI models.
+        Remove OAuth Authorization headers for non-Claude models.
         
-        ZAI's API endpoints reject requests with OAuth headers, but Claude Code
-        includes them for all requests. This recursively searches and removes
-        both 'authorization' and 'Authorization' keys from all nested dicts.
+        Some providers (GLM via ZAI, Kimi) reject requests with OAuth headers,
+        but Claude Code includes them for all requests. This recursively searches
+        and removes both 'authorization' and 'Authorization' keys from all nested dicts.
         
         Args:
-            model: Model name string (e.g., "glm", "glm-fast")
+            model: Model name string (e.g., "glm", "glm-fast", "kimi")
             data: Request data dict to modify in-place
         """
-        # List of model prefixes that route through ZAI API
-        zai_models = ["glm"]
-        
-        # Skip if not a ZAI model
-        if not any(model.startswith(m) for m in zai_models):
+        # List of model prefixes that don't accept OAuth headers
+        # - GLM models via ZAI API
+        # - Kimi models via Kimi API
+        non_claude_models = ["glm", "kimi"]
+
+        # Skip if not a non-Claude model
+        # Check both the model name and after any provider prefix (e.g., "anthropic/kimi-...")
+        model_without_prefix = model.split("/", 1)[-1] if "/" in model else model
+        if not any(model.startswith(m) or model_without_prefix.startswith(m) for m in non_claude_models):
             return
 
-        print(f"[Transform] GLM model detected: {model}", flush=True)
+        print(f"[Transform] Non-Claude model detected: {model}", flush=True)
 
         def remove_auth_recursive(obj, path=""):
             """
