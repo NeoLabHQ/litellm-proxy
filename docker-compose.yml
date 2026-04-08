@@ -6,31 +6,7 @@ services:
       - "4000:4000"
     env_file:
       - .env
-    environment:
-      - DATABASE_URL=postgresql://litellm_user:litellm_password@postgres:5432/litellm
-#    depends_on:
-#      postgres:
-#        condition: service_healthy
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./request_transformer.py:/app/request_transformer.py:ro
     restart: unless-stopped
-
-#  postgres:
-#    image: postgres:16-alpine
-#    container_name: litellm-postgres
-#    environment:
-#      POSTGRES_USER: litellm_user
-#      POSTGRES_PASSWORD: litellm_password
-#      POSTGRES_DB: litellm
-#    volumes:
-#      - postgres_data:/var/lib/postgresql/data
-#    healthcheck:
-#      test: ["CMD-SHELL", "pg_isready -U litellm_user -d litellm"]
-#      interval: 10s
-#      timeout: 5s
-#      retries: 5
-#    restart: unless-stopped
-
-#volumes:
-#  postgres_data:

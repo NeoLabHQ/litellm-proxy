@@ -1,13 +1,15 @@
 # LiteLLM Proxy
 
-A Docker Compose setup for running [LiteLLM](https://github.com/BerriAI/litellm) proxy with PostgreSQL database, configured for GLM models via ZAI API and Claude models via OAuth.
+A Docker Compose setup for running [LiteLLM](https://github.com/BerriAI/litellm) proxy, configured for GLM models via ZAI API, Kimi models, OpenRouter, and Claude models via OAuth.
 
 ## Features
 
 - **GLM Models**: Access GLM-5 and GLM-5-AIR via ZAI API
+- **Kimi Models**: Kimi-for-coding via Anthropic-compatible API
+- **OpenRouter Models**: Access models via OpenRouter (e.g. Qwen)
 - **Claude Models**: Wildcard support for all Anthropic models via Claude Code OAuth
-- **PostgreSQL**: Persistent database for API keys, usage tracking, and logs
-- **OAuth Header Stripping**: Custom callback automatically removes OAuth headers for ZAI models
+- **Fallbacks**: Automatic fallback from Claude models to GLM
+- **OAuth Header Stripping**: Custom callback automatically removes OAuth headers for non-Anthropic models
 
 ## Prerequisites
 
@@ -49,8 +51,9 @@ A Docker Compose setup for running [LiteLLM](https://github.com/BerriAI/litellm)
 | Variable | Description |
 |----------|-------------|
 | `ZAI_API_KEY` | API key for ZAI/GLM models |
+| `KIMI_API_KEY` | API key for Kimi models |
+| `OPENROUTER_API_KEY` | API key for OpenRouter |
 | `LITELLM_MASTER_KEY` | Master key for proxy administration |
-| `DATABASE_URL` | PostgreSQL connection string (auto-configured in Docker) |
 
 ### Available Models
 
@@ -58,14 +61,10 @@ A Docker Compose setup for running [LiteLLM](https://github.com/BerriAI/litellm)
 |------------|---------|-------------|
 | `glm` | ZAI API | GLM-5 model |
 | `glm-fast` | ZAI API | GLM-5-AIR (faster variant) |
+| `kimi` | Kimi API | Kimi-for-coding |
+| `openrouter` | OpenRouter | Qwen 3.6 Plus (free) |
 | `anthropic/*` | Claude OAuth | All Anthropic models via wildcard |
 
-### Ports
-
-| Service | Host Port | Container Port |
-|---------|-----------|----------------|
-| LiteLLM Proxy | 4000 | 4000 |
-| PostgreSQL | internal only | 5432 |
 
 ## Admin UI
 
@@ -87,7 +86,7 @@ After the proxy is running, generate a virtual API key:
 curl -X POST http://localhost:4000/key/generate \
   -H "Authorization: Bearer YOUR_MASTER_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"models": ["glm", "glm-fast", "anthropic/*"], "key_alias": "my-key"}'
+  -d '{"models": ["glm", "glm-fast", "kimi", "openrouter", "anthropic/*"], "key_alias": "my-key"}'
 ```
 
 The response will contain a `key` field — save it, you'll need it for API requests and Claude Code configuration.
@@ -120,7 +119,7 @@ curl http://localhost:4000/v1/chat/completions \
 
 ## OAuth Header Stripping
 
-The `strip_oauth_callback.py` module automatically removes OAuth `Authorization` headers when routing requests to ZAI models. This prevents authentication conflicts when using Claude Code OAuth alongside the ZAI API.
+The `request_transformer.py` module automatically removes OAuth `Authorization` headers when routing requests to non-Anthropic models. This prevents authentication conflicts when using Claude Code OAuth alongside third-party APIs.
 
 ## Management
 
