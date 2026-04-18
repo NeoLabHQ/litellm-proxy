@@ -62,6 +62,14 @@ Global (`~/.claude/settings.json`) or per-project (`.claude/settings.json`):
 - `API_TIMEOUT_MS` — request timeout (useful for slow models)
 - `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` — disables telemetry and non-essential network requests
 
+To skip the Claude Code onboarding screen, add to `~/.claude.json`:
+
+```json
+{
+  "hasCompletedOnboarding": true
+}
+```
+
 ## Admin UI
 
 [http://localhost:4000/ui](http://localhost:4000/ui) — login with any username and your `LITELLM_MASTER_KEY` as password.
