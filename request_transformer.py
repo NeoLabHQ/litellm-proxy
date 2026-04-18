@@ -2,20 +2,25 @@
 LiteLLM Request/Response Transformer Callback
 
 This callback handles compatibility issues when using multiple LLM providers
-through a single LiteLLM proxy. It performs three key transformations:
+through a single LiteLLM proxy. It performs four key transformations:
 
-1. OAuth Header Stripping for Non-Claude Models (GLM, Kimi)
+1. Claude OAuth Token Rotation
+   - Maintains a pool of shared Claude OAuth tokens (CLAUDE_OAUTH_TOKENS env var)
+   - Round-robins across tokens, with automatic cooldown on rate-limited ones
+   - Injects the pooled token via data["api_key"] for Claude/Anthropic models
+
+2. OAuth Header Stripping for Non-Claude Models (GLM, Kimi)
    - Some providers don't accept OAuth Authorization headers
    - Claude Code sends OAuth headers for all requests
    - We strip these headers before forwarding to non-Claude endpoints
 
-2. Thinking Block Removal from Anthropic Requests
+3. Thinking Block Removal from Anthropic Requests
    - Some providers (e.g., OpenRouter) return "thinking" blocks in responses
    - Claude Code caches these blocks in conversation history
    - Anthropic's API rejects requests with empty thinking blocks
    - We strip thinking blocks from messages before sending to Anthropic
 
-3. Thinking Block Removal from OpenRouter Responses
+4. Thinking Block Removal from OpenRouter Responses
    - OpenRouter returns reasoning/thinking blocks in responses
    - These get cached by Claude Code and cause issues later
    - We strip them at the source to prevent pollution
@@ -25,17 +30,66 @@ Usage:
         litellm_settings:
             callbacks:
                 - request_transformer.request_transformer
+
+    In .env:
+        CLAUDE_OAUTH_TOKENS=sk-ant-oat-token1,sk-ant-oat-token2,sk-ant-oat-token3
 """
 
+import os
+import time
+import threading
+
 from litellm.integrations.custom_logger import CustomLogger
+
+# Cooldown duration in seconds for rate-limited tokens
+TOKEN_COOLDOWN_SECONDS = 60
 
 
 class RequestTransformer(CustomLogger):
     """
     Custom LiteLLM callback that transforms requests and responses
-    for multi-provider compatibility.
+    for multi-provider compatibility, with Claude OAuth token rotation.
     """
-    
+
+    def __init__(self):
+        super().__init__()
+        raw = os.environ.get("CLAUDE_OAUTH_TOKENS", "")
+        self.tokens = [t.strip() for t in raw.split(",") if t.strip()]
+        self.cooldowns = {}  # token -> cooldown_until timestamp
+        self.index = 0
+        self.lock = threading.Lock()
+
+        if self.tokens:
+            print(f"[TokenRotator] Loaded {len(self.tokens)} Claude OAuth tokens", flush=True)
+        else:
+            print("[TokenRotator] No CLAUDE_OAUTH_TOKENS configured — Claude models will use client-provided auth", flush=True)
+
+    def _get_next_token(self):
+        """Get next available token using round-robin, skipping cooled-down ones."""
+        with self.lock:
+            now = time.time()
+            # Try to find a non-cooled-down token
+            for _ in range(len(self.tokens)):
+                token = self.tokens[self.index % len(self.tokens)]
+                self.index += 1
+                cooldown_until = self.cooldowns.get(token, 0)
+                if cooldown_until < now:
+                    return token
+            # All tokens are cooling down — return the one that expires soonest
+            return min(self.tokens, key=lambda t: self.cooldowns.get(t, 0))
+
+    def _cooldown_token(self, token):
+        """Put a token on cooldown after a rate limit."""
+        with self.lock:
+            self.cooldowns[token] = time.time() + TOKEN_COOLDOWN_SECONDS
+            # Mask token for logging: show first 15 and last 4 chars
+            masked = f"{token[:15]}...{token[-4:]}" if len(token) > 19 else "***"
+            print(f"[TokenRotator] Token {masked} cooled down for {TOKEN_COOLDOWN_SECONDS}s", flush=True)
+
+    def _is_claude_model(self, model):
+        """Check if a model is a Claude/Anthropic model."""
+        return "claude" in model or "anthropic" in model
+
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
         """
         Called before each LLM API request. Transforms the request data
@@ -51,6 +105,9 @@ class RequestTransformer(CustomLogger):
             Modified request data dict
         """
         model = data.get("model", "")
+
+        # Rotate Claude OAuth token from pool (if configured)
+        self._inject_pooled_token(model, data)
 
         # Strip OAuth headers for non-Claude models (GLM, Kimi don't accept them)
         self._strip_oauth_for_non_claude(model, data)
@@ -77,6 +134,52 @@ class RequestTransformer(CustomLogger):
         
         # Strip thinking blocks from OpenRouter responses to prevent caching issues
         return self._strip_thinking_blocks_from_openrouter_response(model, response)
+
+    def _inject_pooled_token(self, model, data):
+        """
+        For Claude/Anthropic models, replace the client's auth with a pooled token.
+        Strips the client's forwarded Authorization header and sets data["api_key"].
+        """
+        if not self.tokens or not self._is_claude_model(model):
+            return
+
+        token = self._get_next_token()
+        data["api_key"] = token
+
+        # Store which token we used so we can cool it down on failure
+        metadata = data.get("metadata", {})
+        metadata["_pooled_token"] = token
+        data["metadata"] = metadata
+
+        # Strip any client-forwarded Authorization headers
+        self._remove_auth_headers(data)
+
+        masked = f"{token[:15]}...{token[-4:]}" if len(token) > 19 else "***"
+        print(f"[TokenRotator] Using token {masked} for {model}", flush=True)
+
+    def _remove_auth_headers(self, data):
+        """Remove Authorization headers from all nested dicts in data."""
+        if isinstance(data, dict):
+            for key in ["authorization", "Authorization"]:
+                if key in data:
+                    del data[key]
+            for val in data.values():
+                if isinstance(val, dict):
+                    self._remove_auth_headers(val)
+
+    async def async_post_call_failure_hook(self, request_data, original_exception, user_api_key_dict):
+        """Cool down a token if it got rate-limited (HTTP 429)."""
+        if not self.tokens:
+            return
+
+        status_code = getattr(original_exception, "status_code", None)
+        if status_code != 429:
+            return
+
+        metadata = request_data.get("metadata", {}) if isinstance(request_data, dict) else {}
+        token = metadata.get("_pooled_token")
+        if token:
+            self._cooldown_token(token)
 
     def _strip_oauth_for_non_claude(self, model, data):
         """

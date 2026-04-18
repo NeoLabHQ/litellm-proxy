@@ -44,9 +44,6 @@ litellm_settings:
   disable_spend_logs: true
   callbacks:
     - request_transformer.request_transformer
-  model_group_settings:
-    forward_client_headers_to_llm_api:
-      - anthropic/*
 
 router_settings:
   fallbacks:
