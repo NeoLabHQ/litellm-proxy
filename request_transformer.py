@@ -25,6 +25,12 @@ through a single LiteLLM proxy. It performs four key transformations:
    - These get cached by Claude Code and cause issues later
    - We strip them at the source to prevent pollution
 
+5. Claude Token Mode Control
+   - CLAUDE_TOKEN_MODE env var: "rotate" (default) or "passthrough"
+   - Per-request override via x-claude-token-mode header
+   - "rotate": server rotates tokens from CLAUDE_OAUTH_TOKENS pool
+   - "passthrough": client's own Authorization/api_key flows through unchanged
+
 Usage:
     In config.yaml:
         litellm_settings:
@@ -33,6 +39,7 @@ Usage:
 
     In .env:
         CLAUDE_OAUTH_TOKENS=sk-ant-oat-token1,sk-ant-oat-token2,sk-ant-oat-token3
+        CLAUDE_TOKEN_MODE=rotate  # or "passthrough"
 
 Static token authentication is handled separately via custom_auth.py
 (configured as general_settings.custom_auth in config.yaml).
@@ -62,10 +69,16 @@ class RequestTransformer(CustomLogger):
         self.index = 0
         self.lock = threading.Lock()
 
+        self.default_token_mode = os.environ.get("CLAUDE_TOKEN_MODE", "rotate").strip().lower()
+        if self.default_token_mode not in ("rotate", "passthrough"):
+            print(f"[TokenRotator] Invalid CLAUDE_TOKEN_MODE '{self.default_token_mode}', defaulting to 'rotate'", flush=True)
+            self.default_token_mode = "rotate"
+
         if self.tokens:
             print(f"[TokenRotator] Loaded {len(self.tokens)} Claude OAuth tokens", flush=True)
         else:
             print("[TokenRotator] No CLAUDE_OAUTH_TOKENS configured — Claude models will use client-provided auth", flush=True)
+        print(f"[TokenRotator] Default token mode: {self.default_token_mode}", flush=True)
 
     def _get_next_token(self):
         """Get next available token using round-robin, skipping cooled-down ones."""
@@ -92,6 +105,22 @@ class RequestTransformer(CustomLogger):
     def _is_claude_model(self, model):
         """Check if a model is a Claude/Anthropic model."""
         return "claude" in model or "anthropic" in model
+
+    def _resolve_token_mode(self, data):
+        """
+        Determine the effective token mode for this request.
+        Priority: per-request header > global env var default.
+        Returns 'rotate' or 'passthrough'.
+        """
+        headers = data.get("proxy_server_request", {}).get("headers", {})
+        override = None
+        for key in ("x-claude-token-mode", "X-Claude-Token-Mode"):
+            if key in headers:
+                override = headers[key].strip().lower()
+                break
+        if override in ("rotate", "passthrough"):
+            return override
+        return self.default_token_mode
 
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
         """
@@ -142,8 +171,19 @@ class RequestTransformer(CustomLogger):
         """
         For Claude/Anthropic models, replace the client's auth with a pooled token.
         Strips the client's forwarded Authorization header and sets data["api_key"].
+        Respects token mode: "rotate" (default) or "passthrough" (client auth flows through).
         """
-        if not self.tokens or not self._is_claude_model(model):
+        if not self._is_claude_model(model):
+            return
+
+        mode = self._resolve_token_mode(data)
+
+        if mode == "passthrough":
+            print(f"[TokenRotator] Passthrough mode — using client auth for {model}", flush=True)
+            return
+
+        if not self.tokens:
+            print(f"[TokenRotator] No tokens in pool — falling back to passthrough for {model}", flush=True)
             return
 
         token = self._get_next_token()

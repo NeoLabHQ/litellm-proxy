@@ -1,0 +1,118 @@
+# =============================================================================
+# LiteLLM Proxy Configuration
+# =============================================================================
+# Copy this file to config.yaml and customize for your deployment:
+#   cp config.yaml.example config.yaml
+#
+# API keys are read from environment variables (set in .env file).
+# See .env.example for all required variables.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Model List
+# -----------------------------------------------------------------------------
+# Each entry defines a model alias that Claude Code can request.
+# Add, remove, or modify entries to match your provider subscriptions.
+#
+# Required fields per entry:
+#   model_name  — the alias clients use (e.g. "glm", "kimi", "openrouter")
+#   litellm_params.model — provider-specific model identifier
+#   litellm_params.api_key — API key (use os.environ/VAR_NAME to read from env)
+#   litellm_params.api_base — provider endpoint URL
+#
+# To add a new provider, copy any block below and update the values.
+# To remove a provider, delete or comment out the entire block.
+# -----------------------------------------------------------------------------
+model_list:
+  # --- GLM models via ZAI ------------------------------------------------
+  # Standard GLM model. Replace api_base if your ZAI endpoint differs.
+  - model_name: glm
+    litellm_params:
+      model: anthropic/glm-5
+      api_key: os.environ/ZAI_API_KEY
+      api_base: https://api.z.ai/api/anthropic
+      merge_reasoning_content_in_choices: true
+
+  # Faster GLM variant (lower latency, same API).
+  - model_name: glm-fast
+    litellm_params:
+      model: anthropic/glm-5-air
+      api_key: os.environ/ZAI_API_KEY
+      api_base: https://api.z.ai/api/anthropic
+      merge_reasoning_content_in_choices: true
+
+  # --- OpenRouter models --------------------------------------------------
+  # OpenRouter aggregates many providers. Change the model string to use a
+  # different model from their catalog: https://openrouter.ai/models
+  - model_name: openrouter
+    litellm_params:
+      model: openai/qwen/qwen3.6-plus:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      api_base: https://openrouter.ai/api/v1
+      merge_reasoning_content_in_choices: true
+
+  # --- Kimi models --------------------------------------------------------
+  # Kimi uses an Anthropic-compatible API with an extra x-api-key header.
+  - model_name: kimi
+    litellm_params:
+      model: anthropic/kimi-for-coding
+      api_key: os.environ/KIMI_API_KEY
+      api_base: https://api.kimi.com/coding
+      extra_headers:
+        x-api-key: os.environ/KIMI_API_KEY
+
+  # --- Claude via OAuth ---------------------------------------------------
+  # Wildcard entry: routes any "anthropic/<model>" request directly to
+  # Anthropic using OAuth tokens from CLAUDE_OAUTH_TOKENS env var.
+  # No api_key/api_base needed — the request_transformer handles auth.
+  #
+  # Token mode (CLAUDE_TOKEN_MODE env var):
+  #   "rotate" (default) — round-robin through CLAUDE_OAUTH_TOKENS pool
+  #   "passthrough" — client's own token flows through (no rotation)
+  #   Override per-request via x-claude-token-mode header
+  - model_name: anthropic/*
+    litellm_params:
+      model: anthropic/*
+
+# -----------------------------------------------------------------------------
+# LiteLLM Settings
+# -----------------------------------------------------------------------------
+# master_key        — required by LiteLLM internals; set via LITELLM_MASTER_KEY
+# drop_params       — silently drop unsupported params instead of erroring
+# modify_params     — allow callbacks to modify request params
+# callbacks         — custom callback that handles token rotation, header
+#                     stripping, and thinking-block cleanup
+# -----------------------------------------------------------------------------
+litellm_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  drop_params: true
+  modify_params: true
+  turn_off_message_logging: true
+  disable_spend_logs: true
+  callbacks:
+    - request_transformer.request_transformer
+
+# -----------------------------------------------------------------------------
+# Router Settings — Fallbacks
+# -----------------------------------------------------------------------------
+# When a model is unavailable or rate-limited, LiteLLM tries the fallback list
+# in order. Adjust these to match the model_name entries you have configured.
+# Format: "pattern": ["fallback1", "fallback2"]
+# -----------------------------------------------------------------------------
+router_settings:
+  fallbacks:
+    - "claude-*": ["glm"]
+    - "claude-*-*": ["glm"]
+    - "anthropic/*": ["glm"]
+    - "anthropic/claude-haiku-*": ["glm-fast"]
+
+# -----------------------------------------------------------------------------
+# General Settings
+# -----------------------------------------------------------------------------
+# custom_auth — points to the static token auth handler in custom_auth.py.
+#               Requires PROXY_STATIC_TOKEN env var to be set.
+# allow_requests_on_db_unavailable — keeps the proxy running without a database
+# -----------------------------------------------------------------------------
+general_settings:
+  allow_requests_on_db_unavailable: true
+  custom_auth: custom_auth.static_token_auth
