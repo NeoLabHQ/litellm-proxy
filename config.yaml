@@ -54,3 +54,4 @@ router_settings:
 
 general_settings:
   allow_requests_on_db_unavailable: true
+  custom_auth: custom_auth.static_token_auth

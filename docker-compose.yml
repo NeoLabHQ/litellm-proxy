@@ -8,5 +8,6 @@ services:
       - .env
     volumes:
       - ./config.yaml:/app/config.yaml:ro
+      - ./custom_auth.py:/app/custom_auth.py:ro
       - ./request_transformer.py:/app/request_transformer.py:ro
     restart: unless-stopped

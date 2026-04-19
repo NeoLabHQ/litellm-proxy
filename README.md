@@ -25,23 +25,17 @@ Fallbacks: `anthropic/*` -> `glm`, `anthropic/claude-haiku-*` -> `glm-fast`
    ZAI_API_KEY=...
    KIMI_API_KEY=...
    OPENROUTER_API_KEY=...
+   PROXY_STATIC_TOKEN=...
    LITELLM_MASTER_KEY=...
    ```
-   Generate a master key: `echo "sk-litellm-master-$(openssl rand -hex 32)"`
+   Generate tokens: `openssl rand -hex 32`
 
 2. Start the proxy:
    ```bash
    docker compose up -d
    ```
 
-3. Generate a virtual API key:
-   ```bash
-   curl -X POST http://localhost:4000/key/generate \
-     -H "Authorization: Bearer YOUR_MASTER_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"models": ["glm", "glm-fast", "kimi", "openrouter", "anthropic/*"], "key_alias": "my-key"}'
-   ```
-   Save the `key` from the response — you'll need it below.
+3. Set `PROXY_STATIC_TOKEN` in `.env` — share this token with teammates. All requests must include it via `x-litellm-api-key` header.
 
 ## Claude Code Configuration
 
@@ -52,7 +46,7 @@ Global (`~/.claude/settings.json`) or per-project (`.claude/settings.json`):
   "env": {
     "ANTHROPIC_BASE_URL": "http://localhost:4000",
     "ANTHROPIC_MODEL": "glm",
-    "ANTHROPIC_CUSTOM_HEADERS": "x-litellm-api-key: Bearer YOUR_VIRTUAL_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-litellm-api-key: Bearer YOUR_PROXY_STATIC_TOKEN",
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   }
@@ -76,4 +70,4 @@ To skip the Claude Code onboarding screen, add to `~/.claude.json`:
 
 ## Notes
 
-- `request_transformer.py` strips OAuth headers when routing to non-Anthropic providers
+- `request_transformer.py` validates static token and strips OAuth headers when routing to non-Anthropic providers

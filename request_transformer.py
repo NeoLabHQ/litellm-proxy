@@ -33,6 +33,9 @@ Usage:
 
     In .env:
         CLAUDE_OAUTH_TOKENS=sk-ant-oat-token1,sk-ant-oat-token2,sk-ant-oat-token3
+
+Static token authentication is handled separately via custom_auth.py
+(configured as general_settings.custom_auth in config.yaml).
 """
 
 import os
@@ -94,13 +97,13 @@ class RequestTransformer(CustomLogger):
         """
         Called before each LLM API request. Transforms the request data
         based on the target model/provider.
-        
+
         Args:
             user_api_key_dict: User API key information
             cache: LiteLLM cache object
             data: Request data dict containing 'model', 'messages', etc.
             call_type: Type of API call (completion, embedding, etc.)
-            
+
         Returns:
             Modified request data dict
         """
