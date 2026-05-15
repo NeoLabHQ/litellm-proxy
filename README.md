@@ -29,9 +29,21 @@ A [LiteLLM](https://github.com/BerriAI/litellm) proxy with a custom request tran
 2. Customize `config.yaml` for your deployment (add/remove models, adjust fallbacks).
 
 3. Start the proxy:
+
+   **Docker** (recommended for most setups):
    ```bash
    docker compose up -d
    ```
+
+   **Bare metal** (for low-disk servers, no Docker needed):
+   ```bash
+   sudo ./install.sh
+   ```
+   Installs litellm via pip, creates a systemd service on port 4000. Files are symlinked from the repo.
+   
+   To update after code changes: `git pull && sudo ./install.sh` (detects existing install, just restarts).
+   
+   To remove: `sudo ./install.sh --uninstall`
 
 ## Claude Code Client Setup
 
