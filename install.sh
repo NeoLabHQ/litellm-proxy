@@ -16,7 +16,6 @@ INSTALL_DIR="/opt/litellm-proxy"
 VENV_DIR="${INSTALL_DIR}/venv"
 SERVICE_NAME="litellm-proxy"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-SERVICE_USER="litellm"
 LITELLM_VERSION="1.83.7"
 LITELLM_PORT=4000
 
@@ -58,12 +57,6 @@ do_install() {
     apt-get update -qq
     apt-get install -y -qq python3 python3-pip python3-venv git > /dev/null
 
-    # System user
-    if ! id -u "${SERVICE_USER}" &>/dev/null; then
-        info "Creating system user '${SERVICE_USER}'..."
-        useradd --system --no-create-home --shell /usr/sbin/nologin "${SERVICE_USER}"
-    fi
-
     # Install directory + venv
     mkdir -p "${INSTALL_DIR}"
     info "Creating Python virtual environment..."
@@ -77,10 +70,6 @@ do_install() {
     # Symlink files
     link_files
 
-    # Give service user read access to repo files
-    usermod -aG "$(stat -c '%G' "${SCRIPT_DIR}")" "${SERVICE_USER}" 2>/dev/null || true
-    chmod -R g+r "${SCRIPT_DIR}"
-
     # systemd service
     info "Creating systemd service..."
     cat > "${SERVICE_FILE}" <<UNIT
@@ -90,8 +79,6 @@ After=network.target
 
 [Service]
 Type=simple
-User=${SERVICE_USER}
-Group=${SERVICE_USER}
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${INSTALL_DIR}/.env
 ExecStart=${VENV_DIR}/bin/litellm --config ${INSTALL_DIR}/config.yaml --port ${LITELLM_PORT}
@@ -133,11 +120,6 @@ do_uninstall() {
     if [[ -d "${INSTALL_DIR}" ]]; then
         info "Removing ${INSTALL_DIR}..."
         rm -rf "${INSTALL_DIR}"
-    fi
-
-    if id -u "${SERVICE_USER}" &>/dev/null; then
-        info "Removing user '${SERVICE_USER}'..."
-        userdel "${SERVICE_USER}"
     fi
 
     info "Done!"

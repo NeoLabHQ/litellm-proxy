@@ -43,6 +43,8 @@ A [LiteLLM](https://github.com/BerriAI/litellm) proxy with a custom request tran
    
    To update after code changes: `git pull && sudo ./install.sh` (detects existing install, just restarts).
    
+   To check logs: `journalctl -u litellm-proxy -f`
+   
    To remove: `sudo ./install.sh --uninstall`
 
 ## Claude Code Client Setup
