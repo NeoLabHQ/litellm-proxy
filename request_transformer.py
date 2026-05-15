@@ -25,7 +25,12 @@ through a single LiteLLM proxy. It performs four key transformations:
    - These get cached by Claude Code and cause issues later
    - We strip them at the source to prevent pollution
 
-5. Claude Token Mode Control
+5. Tool Schema Flattening for Anthropic
+   - Anthropic's API rejects oneOf/allOf/anyOf at the top level of tool input_schema
+   - Some MCP tools and skills generate schemas with these combinators
+   - We merge sub-schemas into a single flat object schema before sending to Anthropic
+
+6. Claude Token Mode Control
    - CLAUDE_TOKEN_MODE env var: "rotate" (default) or "passthrough"
    - Per-request override via x-claude-token-mode header
    - "rotate": server rotates tokens from CLAUDE_OAUTH_TOKENS pool
@@ -146,6 +151,9 @@ class RequestTransformer(CustomLogger):
 
         # Strip thinking blocks for Anthropic models (API validation requirement)
         self._strip_thinking_blocks_for_anthropic(model, data)
+
+        # Flatten oneOf/allOf/anyOf in tool schemas (Anthropic API restriction)
+        self._flatten_tool_schemas(model, data)
 
         return data
 
@@ -347,6 +355,138 @@ class RequestTransformer(CustomLogger):
                         print(f"[Transform] Stripped {original_len - len(choice.message.content)} thinking blocks from response", flush=True)
 
         return response
+
+    def _flatten_tool_schemas(self, model, data):
+        """
+        Flatten top-level oneOf/allOf/anyOf in tool input schemas for Anthropic models.
+
+        Anthropic's API rejects tool definitions with JSON Schema combinators at the
+        top level of input_schema. This merges the sub-schemas into a single object
+        schema to make them compatible.
+
+        Args:
+            model: Model name string
+            data: Request data dict containing 'tools' to modify in-place
+        """
+        if not self._is_claude_model(model):
+            return
+
+        tools = data.get("tools", [])
+        if not tools:
+            return
+
+        for i, tool in enumerate(tools):
+            # Handle both Anthropic format (input_schema) and OpenAI format (parameters)
+            # Also handle nested custom tool format
+            schema = None
+            schema_key = None
+            schema_parent = None
+
+            if isinstance(tool, dict):
+                if "input_schema" in tool:
+                    schema = tool["input_schema"]
+                    schema_key = "input_schema"
+                    schema_parent = tool
+                elif "parameters" in tool:
+                    schema = tool["parameters"]
+                    schema_key = "parameters"
+                    schema_parent = tool
+                elif "custom" in tool and isinstance(tool["custom"], dict):
+                    custom = tool["custom"]
+                    if "input_schema" in custom:
+                        schema = custom["input_schema"]
+                        schema_key = "input_schema"
+                        schema_parent = custom
+                    elif "parameters" in custom:
+                        schema = custom["parameters"]
+                        schema_key = "parameters"
+                        schema_parent = custom
+                # Also check function.parameters (OpenAI nested format)
+                elif "function" in tool and isinstance(tool["function"], dict):
+                    func = tool["function"]
+                    if "parameters" in func:
+                        schema = func["parameters"]
+                        schema_key = "parameters"
+                        schema_parent = func
+
+            if not schema or not isinstance(schema, dict):
+                continue
+
+            for combinator in ("oneOf", "allOf", "anyOf"):
+                if combinator in schema:
+                    tool_name = (
+                        tool.get("name", "")
+                        or tool.get("custom", {}).get("name", "")
+                        or tool.get("function", {}).get("name", "")
+                        or f"tools[{i}]"
+                    )
+                    merged = self._merge_subschemas(schema, combinator)
+                    schema_parent[schema_key] = merged
+                    print(f"[Transform] Flattened top-level {combinator} in tool '{tool_name}'", flush=True)
+                    break  # Only one combinator expected at top level
+
+    def _merge_subschemas(self, schema, combinator):
+        """
+        Merge sub-schemas from a top-level combinator into a single object schema.
+
+        For allOf: strict merge — combines properties and required from all sub-schemas.
+        For oneOf/anyOf: permissive merge — unions properties, skips required.
+
+        Preserves any top-level fields (description, type, etc.) from the original schema.
+
+        Args:
+            schema: The original schema dict containing the combinator
+            combinator: One of "oneOf", "allOf", "anyOf"
+
+        Returns:
+            New flattened schema dict
+        """
+        sub_schemas = schema.get(combinator, [])
+        if not sub_schemas or not isinstance(sub_schemas, list):
+            return schema
+
+        merged = {"type": "object"}
+
+        # Preserve top-level fields other than the combinator itself
+        for key, val in schema.items():
+            if key != combinator:
+                merged[key] = val
+
+        merged_properties = {}
+        merged_required = []
+        additional_properties = None
+
+        for sub in sub_schemas:
+            if not isinstance(sub, dict):
+                continue
+
+            # Merge properties
+            props = sub.get("properties", {})
+            if isinstance(props, dict):
+                for prop_name, prop_schema in props.items():
+                    # For allOf, later schemas override earlier ones
+                    # For oneOf/anyOf, first definition wins
+                    if combinator == "allOf" or prop_name not in merged_properties:
+                        merged_properties[prop_name] = prop_schema
+
+            # Merge required (only for allOf — strict intersection)
+            if combinator == "allOf":
+                req = sub.get("required", [])
+                if isinstance(req, list):
+                    merged_required.extend(req)
+
+            # Track additionalProperties
+            if "additionalProperties" in sub:
+                additional_properties = sub["additionalProperties"]
+
+        if merged_properties:
+            merged["properties"] = merged_properties
+        if merged_required:
+            merged["required"] = list(dict.fromkeys(merged_required))  # dedupe preserving order
+        if additional_properties is not None:
+            merged["additionalProperties"] = additional_properties
+
+        return merged
 
 
 # Singleton instance for LiteLLM to import
