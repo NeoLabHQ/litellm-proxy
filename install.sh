@@ -38,6 +38,18 @@ is_installed() {
     [[ -f "${SERVICE_FILE}" ]] && [[ -d "${VENV_DIR}" ]]
 }
 
+# --- Access info --------------------------------------------------------------
+print_access_info() {
+    local public_ip
+    public_ip=$(curl -s --max-time 5 https://ifconfig.me || echo "unknown")
+
+    info "Public IP:     ${public_ip}"
+    info "Endpoint:      http://${public_ip}:${LITELLM_PORT}"
+    info "Check status:  systemctl status ${SERVICE_NAME}"
+    info "View logs:     journalctl -u ${SERVICE_NAME} -f"
+    info "Health check:  curl http://${public_ip}:${LITELLM_PORT}/health"
+}
+
 # --- Install / Restart --------------------------------------------------------
 do_install() {
     require_root
@@ -47,6 +59,7 @@ do_install() {
         link_files
         systemctl restart "${SERVICE_NAME}"
         systemctl --no-pager status "${SERVICE_NAME}"
+        print_access_info
         return
     fi
 
@@ -93,14 +106,7 @@ UNIT
     systemctl enable "${SERVICE_NAME}"
     systemctl start "${SERVICE_NAME}"
 
-    local public_ip
-    public_ip=$(curl -s --max-time 5 https://ifconfig.me || echo "unknown")
-
-    info "Done! Service is running on port ${LITELLM_PORT}"
-    info "Public IP:     ${public_ip}"
-    info "Check status:  systemctl status ${SERVICE_NAME}"
-    info "View logs:     journalctl -u ${SERVICE_NAME} -f"
-    info "Health check:  curl http://${public_ip}:${LITELLM_PORT}/health"
+    print_access_info
 }
 
 # --- Uninstall ----------------------------------------------------------------
