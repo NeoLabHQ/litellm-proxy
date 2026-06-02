@@ -93,10 +93,14 @@ UNIT
     systemctl enable "${SERVICE_NAME}"
     systemctl start "${SERVICE_NAME}"
 
+    local public_ip
+    public_ip=$(curl -s --max-time 5 https://ifconfig.me || echo "unknown")
+
     info "Done! Service is running on port ${LITELLM_PORT}"
+    info "Public IP:     ${public_ip}"
     info "Check status:  systemctl status ${SERVICE_NAME}"
     info "View logs:     journalctl -u ${SERVICE_NAME} -f"
-    info "Health check:  curl http://localhost:${LITELLM_PORT}/health"
+    info "Health check:  curl http://${public_ip}:${LITELLM_PORT}/health"
 }
 
 # --- Uninstall ----------------------------------------------------------------
